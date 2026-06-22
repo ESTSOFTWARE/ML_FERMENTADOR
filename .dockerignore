@@ -1,0 +1,68 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Entorno virtual
+venv/
+.venv/
+env/
+
+# Variables de entorno
+.env
+.env.local
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.coverage
+
+# Datos y modelos (pueden ser muy pesados)
+data/
+models/*.pkl
+models/*.joblib
+models/*.h5
+models/*.pth
+
+# Logs
+*.log
+logs/
+
+# Documentación
+*.md
+README.md
+docs/
+
+# Tests
+tests/
+.pytest_cache/
+
+# Archivos temporales
+*.tmp
+*.bak
+.tmp/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
