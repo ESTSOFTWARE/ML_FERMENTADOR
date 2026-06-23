@@ -24,6 +24,9 @@ from src.infrastructure.controllers.anomaly_controller import AnomalyController
 from src.infrastructure.controllers.predict_controller import PredictController
 from src.infrastructure.controllers.realtime_controller import RealtimeController
 from src.infrastructure.controllers.training_controller import TrainingController
+from src.application.use_cases.inference.get_inference_history import GetInferenceHistory
+from src.infrastructure.adapters.sqlite_inference_repository import SqliteInferenceRepository
+from src.infrastructure.controllers.inference_controller import InferenceController
 
 
 @lru_cache
@@ -64,13 +67,21 @@ def get_predict_controller() -> PredictController:
 
 
 def get_anomaly_controller() -> AnomalyController:
-    use_case = DetectAnomaly(get_model_repository(), ExtractAnomalyFeatures())
+    use_case = DetectAnomaly(
+        model_repository=get_model_repository(),
+        inference_repository=get_inference_repository(),
+        feature_extractor=ExtractAnomalyFeatures(),
+    )
     return AnomalyController(use_case)
 
 
 def get_realtime_controller() -> RealtimeController:
     predict_use_case = PredictEfficiency(get_model_repository(), ExtractPredictionFeatures())
-    detect_use_case = DetectAnomaly(get_model_repository(), ExtractAnomalyFeatures())
+    detect_use_case = DetectAnomaly(
+        model_repository=get_model_repository(),
+        inference_repository=get_inference_repository(),
+        feature_extractor=ExtractAnomalyFeatures(),
+    )
     orchestrator = ProcessRealtimeReading(
         predict_efficiency=predict_use_case,
         detect_anomaly=detect_use_case,
@@ -87,3 +98,12 @@ def get_training_controller() -> TrainingController:
         feature_extractor=ExtractPredictionFeatures(),
     )
     return TrainingController(use_case)
+
+@lru_cache
+def get_inference_repository() -> SqliteInferenceRepository:
+    return SqliteInferenceRepository(settings.db_path)
+
+
+def get_inference_controller() -> InferenceController:
+    use_case = GetInferenceHistory(get_inference_repository())
+    return InferenceController(use_case)

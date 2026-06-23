@@ -42,7 +42,7 @@ services:
       dockerfile: Dockerfile
     container_name: nicka-ml-service
     ports:
-      - "8000:8000"
+      - "8001:8001"
     volumes:
       - ./data:/app/data
       - ./models:/app/models
@@ -50,8 +50,9 @@ services:
       - N_FERMENTATIONS=1000
       - RANDOM_SEED=42
       - API_HOST=0.0.0.0
-      - API_PORT=8000
+      - API_PORT=8001
       - API_PREFIX=/api/v1
+      - DB_PATH=data/inferences.db
       - BACKEND_BASE_URL=http://localhost:9999
       - BACKEND_REPORTS_ENDPOINT=/api/fermentation-reports
       - BACKEND_SENSORS_ENDPOINT=/api/sensor-readings
@@ -59,7 +60,7 @@ services:
       - BACKEND_API_TIMEOUT_SECONDS=10.0
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
