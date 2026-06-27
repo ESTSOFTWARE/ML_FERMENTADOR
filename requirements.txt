@@ -16,3 +16,12 @@ joblib==1.4.2
 # Data
 pyarrow==16.1.0
 openpyxl==3.1.2
+
+# Database
+psycopg2-binary==2.9.9
+
+# Messaging
+aio-pika==9.4.1
+
+# Scheduling
+apscheduler==3.10.4

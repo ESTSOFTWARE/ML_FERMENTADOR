@@ -1,6 +1,12 @@
+from contextlib import asynccontextmanager
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 
+from src.infrastructure.adapters.rabbitmq_consumer import RabbitMQConsumer
 from src.infrastructure.config.settings import settings
+from src.infrastructure.dependencies import get_nightly_retrain_use_case, get_realtime_use_case
 from src.infrastructure.routes import (
     anomaly_routes,
     inference_routes,
@@ -9,6 +15,29 @@ from src.infrastructure.routes import (
     training_routes,
 )
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    consumer = RabbitMQConsumer(get_realtime_use_case())
+    await consumer.start()
+
+    scheduler = AsyncIOScheduler()
+    nightly_retrain = get_nightly_retrain_use_case()
+    scheduler.add_job(
+        nightly_retrain.execute,
+        trigger=CronTrigger(hour=2, minute=0),
+        id="nightly_retrain",
+        name="Reentrenamiento nocturno 2AM",
+        replace_existing=True,
+    )
+    scheduler.start()
+
+    yield
+
+    await consumer.stop()
+    scheduler.shutdown()
+
+
 app = FastAPI(
     title="Nich-Ká ML Service",
     description=(
@@ -16,6 +45,7 @@ app = FastAPI(
         "predicción de eficiencia y detección de anomalías en fermentaciones."
     ),
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.include_router(predict_routes.router, prefix=settings.api_prefix)

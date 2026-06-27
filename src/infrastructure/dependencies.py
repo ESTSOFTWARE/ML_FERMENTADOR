@@ -11,6 +11,7 @@ from src.application.use_cases.realtime.predict_efficiency import PredictEfficie
 from src.application.use_cases.realtime.process_realtime_reading import ProcessRealtimeReading
 from src.application.use_cases.shared.readings_to_profile import ReadingsToProfile
 from src.application.use_cases.training.retrain_with_real_report import RetrainWithRealReport
+from src.application.use_cases.training.scheduled_nightly_retrain import ScheduledNightlyRetrain
 from src.infrastructure.adapters.http_fermentation_report_repository import (
     HttpFermentationReportRepository,
 )
@@ -25,7 +26,7 @@ from src.infrastructure.controllers.predict_controller import PredictController
 from src.infrastructure.controllers.realtime_controller import RealtimeController
 from src.infrastructure.controllers.training_controller import TrainingController
 from src.application.use_cases.inference.get_inference_history import GetInferenceHistory
-from src.infrastructure.adapters.sqlite_inference_repository import SqliteInferenceRepository
+from src.infrastructure.adapters.postgres_inference_repository import PostgresInferenceRepository
 from src.infrastructure.controllers.inference_controller import InferenceController
 
 
@@ -75,19 +76,31 @@ def get_anomaly_controller() -> AnomalyController:
     return AnomalyController(use_case)
 
 
-def get_realtime_controller() -> RealtimeController:
-    predict_use_case = PredictEfficiency(get_model_repository(), ExtractPredictionFeatures())
-    detect_use_case = DetectAnomaly(
-        model_repository=get_model_repository(),
-        inference_repository=get_inference_repository(),
-        feature_extractor=ExtractAnomalyFeatures(),
-    )
-    orchestrator = ProcessRealtimeReading(
-        predict_efficiency=predict_use_case,
-        detect_anomaly=detect_use_case,
+@lru_cache
+def get_realtime_use_case() -> ProcessRealtimeReading:
+    return ProcessRealtimeReading(
+        predict_efficiency=PredictEfficiency(get_model_repository(), ExtractPredictionFeatures()),
+        detect_anomaly=DetectAnomaly(
+            model_repository=get_model_repository(),
+            inference_repository=get_inference_repository(),
+            feature_extractor=ExtractAnomalyFeatures(),
+        ),
         notification_publisher=get_notification_publisher(),
     )
-    return RealtimeController(orchestrator)
+
+
+def get_realtime_controller() -> RealtimeController:
+    return RealtimeController(get_realtime_use_case())
+
+
+def get_nightly_retrain_use_case() -> ScheduledNightlyRetrain:
+    retrain = RetrainWithRealReport(
+        model_repository=get_model_repository(),
+        reading_repository=get_sensor_reading_repository(),
+        readings_to_profile=ReadingsToProfile(),
+        feature_extractor=ExtractPredictionFeatures(),
+    )
+    return ScheduledNightlyRetrain(retrain, get_fermentation_report_repository())
 
 
 def get_training_controller() -> TrainingController:
@@ -100,8 +113,8 @@ def get_training_controller() -> TrainingController:
     return TrainingController(use_case)
 
 @lru_cache
-def get_inference_repository() -> SqliteInferenceRepository:
-    return SqliteInferenceRepository(settings.db_path)
+def get_inference_repository() -> PostgresInferenceRepository:
+    return PostgresInferenceRepository()
 
 
 def get_inference_controller() -> InferenceController:
