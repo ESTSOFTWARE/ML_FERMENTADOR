@@ -1,41 +1,22 @@
-#services:
-#  nicka-ml:
-#    build:
-#      context: .
-#      dockerfile: Dockerfile
-#    container_name: nicka-ml-service
-#    ports:
-#      - "8000:8000"
-#    volumes:
-#      - ./data:/app/data
-#      - ./models:/app/models
-#    environment:
-#      - N_FERMENTATIONS=1000
-#      - RANDOM_SEED=42
-#      - API_HOST=0.0.0.0
-#      - API_PORT=8000
-#      - API_PREFIX=/api/v1
-#      - BACKEND_BASE_URL=http://nicka-backend:8080
-#      - BACKEND_REPORTS_ENDPOINT=/api/fermentation-reports
-#      - BACKEND_SENSORS_ENDPOINT=/api/sensor-readings
-#      - BACKEND_NOTIFICATIONS_ENDPOINT=/api/notifications/ml-results
-#      - BACKEND_API_TIMEOUT_SECONDS=10.0
-#    networks:
-#      - nicka-network
-#    restart: unless-stopped
-#    healthcheck:
-#      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-#      interval: 30s
-#      timeout: 10s
-#      retries: 3
-
-#networks:
-#  nicka-network:
-#    external: true
-#    name: nicka-network
-# docker-compose.yml
-
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nicka-ml-postgres
+    environment:
+      - POSTGRES_DB=nichka_ml
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=Ameth2005
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d nichka_ml"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   nicka-ml:
     build:
       context: .
@@ -44,23 +25,20 @@ services:
     ports:
       - "8001:8001"
     volumes:
-      - ./data:/app/data
       - ./models:/app/models
+    env_file:
+      - .env
     environment:
-      - N_FERMENTATIONS=1000
-      - RANDOM_SEED=42
-      - API_HOST=0.0.0.0
-      - API_PORT=8001
-      - API_PREFIX=/api/v1
-      - DB_PATH=data/inferences.db
-      - BACKEND_BASE_URL=http://localhost:9999
-      - BACKEND_REPORTS_ENDPOINT=/api/fermentation-reports
-      - BACKEND_SENSORS_ENDPOINT=/api/sensor-readings
-      - BACKEND_NOTIFICATIONS_ENDPOINT=/api/notifications/ml-results
-      - BACKEND_API_TIMEOUT_SECONDS=10.0
+      - DB_HOST=postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+volumes:
+  postgres_data:
