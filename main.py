@@ -46,6 +46,9 @@ app = FastAPI(
     ),
     version="1.0.0",
     lifespan=lifespan,
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None,
+    openapi_url="/openapi.json" if settings.DEBUG else None
 )
 
 app.include_router(predict_routes.router, prefix=settings.api_prefix)
