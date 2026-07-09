@@ -4,32 +4,45 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    data_dir: Path = Path("data/generated")
-    real_data_dir: Path = Path("data/real")
-    models_dir: Path = Path("models")
-    db_host: str = "localhost"
-    db_port: int = 5432
-    db_name: str = "nicka_ml"
-    db_user: str = "nicka"
-    db_password: str = "nicka"
+    # Directorios
+    data_dir: Path
+    real_data_dir: Path
+    models_dir: Path
 
-    n_fermentations: int = 1000
-    random_seed: int = 42
+    # Base de datos
+    db_host: str
+    db_port: int
+    db_name: str
+    db_user: str
+    db_password: str
 
-    api_host: str = "0.0.0.0"
-    api_port: int = 8000
-    api_prefix: str = "/api/v1"
+    # Generación de datos
+    n_fermentations: int
+    random_seed: int
 
-    rabbitmq_url: str = "amqp://guest:guest@localhost/"
-    rabbitmq_queue: str = "sensor.readings"
+    # API
+    api_host: str
+    api_port: int
+    api_prefix: str
 
-    backend_base_url: str = "http://nicka-backend:8080"
-    backend_reports_endpoint: str = "/api/fermentation-reports"
-    backend_sensors_endpoint: str = "/api/sensor-readings"
-    backend_notifications_endpoint: str = "/api/notifications/ml-results"
-    backend_api_timeout_seconds: float = 10.0
+    # RabbitMQ
+    rabbitmq_url: str
+    rabbitmq_queue: str
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    # Backend
+    backend_base_url: str
+    backend_reports_endpoint: str
+    backend_sensors_endpoint: str
+    backend_notifications_endpoint: str
+    backend_api_timeout_seconds: float
+
+    # Debug
+    debug: bool
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
 
 
 settings = Settings()

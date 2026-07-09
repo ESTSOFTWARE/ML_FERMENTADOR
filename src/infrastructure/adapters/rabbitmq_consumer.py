@@ -30,7 +30,7 @@ class RabbitMQConsumer:
             logger.info("RabbitMQ consumer detenido.")
 
     async def _handle_message(self, message: aio_pika.IncomingMessage) -> None:
-        async with message.process(requeue_on_error=False):
+        async with message.process(requeue=False):
             try:
                 data = json.loads(message.body)
                 reading = RealtimeReadingDTO(**data)
