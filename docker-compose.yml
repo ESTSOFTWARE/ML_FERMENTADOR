@@ -5,7 +5,7 @@ services:
     environment:
       - POSTGRES_DB=nichka_ml
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=Ameth2005
+      - POSTGRES_PASSWORD=Fabricio.2312
     ports:
       - "5433:5432"
     volumes:
@@ -34,6 +34,8 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s
