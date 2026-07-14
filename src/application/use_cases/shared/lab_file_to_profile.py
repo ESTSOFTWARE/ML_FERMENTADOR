@@ -26,7 +26,7 @@ from src.application.use_cases.simulation.simulate_fermentation import SensorPro
 from src.domain.entities.fermentation_profile import FermentationProfile
 from src.domain.entities.kinetic_parameters import KineticParameters
 from src.domain.entities.sensor_calibration import SensorCalibration
-from infrastructure.parsers.lab_file_reader import FileFormat
+from src.infrastructure.parsers.lab_file_reader import FileFormat
 
 
 class LabFileToProfile:
