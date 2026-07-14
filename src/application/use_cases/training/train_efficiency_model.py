@@ -27,9 +27,9 @@ class TrainEfficiencyModel:
         self._extractor = ExtractPredictionFeatures()
 
     def execute(
-        self, profiles: list[FermentationProfile]
+        self, profiles: list[FermentationProfile], targets: list[float | None] | None = None
     ) -> tuple[XGBRegressor, StandardScaler, dict]:
-        X, y = self._build_dataset(profiles)
+        X, y = self._build_dataset(profiles, targets)
 
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
@@ -54,12 +54,13 @@ class TrainEfficiencyModel:
         metrics = self._evaluate(model, X_test_s, y_test)
         return model, scaler, metrics
 
-    def _build_dataset(self, profiles: list[FermentationProfile]) -> tuple[np.ndarray, np.ndarray]:
-        rows, targets = [], []
-        for profile in profiles:
-            rows.append(self._extractor.execute(profile))
-            targets.append(profile.final_efficiency_percent)
-        return pd.DataFrame(rows).values, np.array(targets)
+    def _build_dataset(
+        self, profiles: list[FermentationProfile], targets: list[float | None] | None = None
+    ) -> tuple[np.ndarray, np.ndarray]:
+        rows = [self._extractor.execute(p) for p in profiles]
+        overrides = targets or [None] * len(profiles)
+        y = [ov if ov is not None else p.final_efficiency_percent for ov, p in zip(overrides, profiles)]
+        return pd.DataFrame(rows).values, np.array(y)
 
     @staticmethod
     def _evaluate(model: XGBRegressor, X_test: np.ndarray, y_test: np.ndarray) -> dict:

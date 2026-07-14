@@ -1,5 +1,7 @@
 from functools import lru_cache
 
+from src.application.use_cases.training.train_anomaly_from_files import TrainAnomalyFromFiles
+from src.application.use_cases.training.train_efficiency_from_files import TrainEfficiencyFromFiles
 from src.application.use_cases.feature_engineering.extract_anomaly_features import (
     ExtractAnomalyFeatures,
 )
@@ -93,24 +95,27 @@ def get_realtime_controller() -> RealtimeController:
     return RealtimeController(get_realtime_use_case())
 
 
-def get_nightly_retrain_use_case() -> ScheduledNightlyRetrain:
-    retrain = RetrainWithRealReport(
+@lru_cache
+def get_retrain_with_real_report() -> RetrainWithRealReport:
+    return RetrainWithRealReport(
         model_repository=get_model_repository(),
         reading_repository=get_sensor_reading_repository(),
         readings_to_profile=ReadingsToProfile(),
         feature_extractor=ExtractPredictionFeatures(),
     )
-    return ScheduledNightlyRetrain(retrain, get_fermentation_report_repository())
+
+
+def get_nightly_retrain_use_case() -> ScheduledNightlyRetrain:
+    return ScheduledNightlyRetrain(get_retrain_with_real_report(), get_fermentation_report_repository())
 
 
 def get_training_controller() -> TrainingController:
-    use_case = RetrainWithRealReport(
-        model_repository=get_model_repository(),
-        reading_repository=get_sensor_reading_repository(),
-        readings_to_profile=ReadingsToProfile(),
-        feature_extractor=ExtractPredictionFeatures(),
+    return TrainingController(
+        retrain_with_real_report=get_retrain_with_real_report(),
+        train_efficiency_from_files=get_train_efficiency_from_files(),
+        train_anomaly_from_files=get_train_anomaly_from_files(),
     )
-    return TrainingController(use_case)
+
 
 @lru_cache
 def get_inference_repository() -> PostgresInferenceRepository:
@@ -120,3 +125,11 @@ def get_inference_repository() -> PostgresInferenceRepository:
 def get_inference_controller() -> InferenceController:
     use_case = GetInferenceHistory(get_inference_repository())
     return InferenceController(use_case)
+
+
+def get_train_efficiency_from_files() -> TrainEfficiencyFromFiles:
+    return TrainEfficiencyFromFiles(model_repository=get_model_repository())
+
+
+def get_train_anomaly_from_files() -> TrainAnomalyFromFiles:
+    return TrainAnomalyFromFiles(model_repository=get_model_repository())

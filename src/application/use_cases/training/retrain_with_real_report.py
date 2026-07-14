@@ -1,5 +1,3 @@
-# src/application/use_cases/training/retrain_with_real_report.py
-
 import numpy as np
 from xgboost import XGBRegressor
 
