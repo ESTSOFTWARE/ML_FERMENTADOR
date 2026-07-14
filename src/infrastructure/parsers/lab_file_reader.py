@@ -3,12 +3,19 @@ Lee un archivo de laboratorio (csv o xlsx) subido por el usuario y lo
 normaliza a un DataFrame con columna 'time_hours', detectando cuál de
 los dos formatos soportados trae:
 
-- "wide": columnas de sensor ya listas (ph, temperature_c, turbidity,
-  conductivity, alcohol_percent) -- mismo formato que
-  CsvSensorReadingRepository ya espera.
 - "kinetic": datos crudos de laboratorio tipo Sacharomyces.xlsx
   (Hora, Azúcares, Etanol, pH, Temperatura). No trae turbidez,
   conductividad ni alcohol% -- se derivan en la capa de aplicación.
+- "wide": columnas de sensor ya listas (ph, temperature_c, turbidity,
+  conductivity, alcohol_percent) -- mismo formato que
+  CsvSensorReadingRepository ya espera.
+
+IMPORTANTE sobre el orden de detección: 'ph' aparece en AMBOS
+formatos, así que no sirve como marcador exclusivo. 'kinetic' se
+revisa PRIMERO porque sus marcadores (azucares, etanol) son
+exclusivos de ese formato -- si se revisara 'wide' primero, cualquier
+archivo kinetic con columna 'ph' (que siempre la tiene) se
+clasificaría incorrectamente como 'wide'.
 """
 
 import unicodedata
@@ -20,8 +27,8 @@ import pandas as pd
 FileFormat = Literal["wide", "kinetic"]
 
 _TIME_KEYWORDS = {"hora", "time_hours", "tiempo"}
-_WIDE_MARKER_COLUMNS = {"ph", "temperature_c", "turbidity", "conductivity", "alcohol_percent"}
 _KINETIC_MARKER_COLUMNS = {"azucares", "etanol"}
+_WIDE_MARKER_COLUMNS = {"ph", "temperature_c", "turbidity", "conductivity", "alcohol_percent"}
 
 
 def _strip_accents(text: str) -> str:
@@ -62,12 +69,14 @@ class LabFileReader:
 
     @staticmethod
     def _detect_format(columns: set[str], path: Path) -> FileFormat:
-        if columns & _WIDE_MARKER_COLUMNS:
-            return "wide"
+        # 'kinetic' primero: azucares/etanol son marcadores exclusivos.
+        # 'ph' NO se usa como decisor porque aparece en ambos formatos.
         if columns & _KINETIC_MARKER_COLUMNS:
             return "kinetic"
+        if columns & _WIDE_MARKER_COLUMNS:
+            return "wide"
         raise ValueError(
             f"No se reconoce el formato de '{path.name}'. Se esperaban columnas de "
-            f"sensor ({_WIDE_MARKER_COLUMNS}) o columnas crudas de laboratorio "
-            f"({_KINETIC_MARKER_COLUMNS})."
+            f"laboratorio crudo ({_KINETIC_MARKER_COLUMNS}) o columnas de sensor "
+            f"({_WIDE_MARKER_COLUMNS})."
         )
