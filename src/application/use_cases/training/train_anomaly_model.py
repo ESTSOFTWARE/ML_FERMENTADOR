@@ -4,90 +4,71 @@ from sklearn.ensemble import IsolationForest
 from sklearn.metrics import classification_report
 from sklearn.preprocessing import StandardScaler
 
-from src.domain.dtos.anomaly_request_dto import AnomalyRequestDTO, SensorSnapshotDTO
-from src.application.use_cases.feature_engineering.extract_anomaly_features import (
-    ExtractAnomalyFeatures,
-)
+from src.application.use_cases.shared.anomaly_window_builder import AnomalyWindowBuilder
 
-WINDOW_SIZE = 10
-SENSOR_COLUMN_MAP = {
-    "temperature_c": "temperature_c",
-    "turbidity_od": "turbidity",
-    "conductivity_us_cm": "conductivity",
-}
+MIN_NORMAL_SAMPLES = 1  # con 0 no hay absolutamente nada con qué entrenar
 
 
 class TrainAnomalyModel:
     """
     Use case: entrena un IsolationForest desde cero usando un DataFrame
     con filas por timestamp (formato producido por GenerateSyntheticDataset
-    o BuildDatasetFromCsv).
+    o BuildDatasetFromCsv/LabFileToProfile).
 
     Responsabilidad única: entrenamiento completo del modelo de
     anomalías. Es no supervisado: se entrena SOLO con ventanas
     normales (is_anomaly=False); las anómalas se usan solo para evaluar.
+
+    warm_start=True queda fijo en el modelo resultante para permitir
+    reentrenamiento incremental posterior (ver RetrainAnomalyWithRealReport)
+    sin tener que reconstruir el estimador desde configuración.
     """
 
-    def __init__(self) -> None:
-        self._extractor = ExtractAnomalyFeatures()
+    def __init__(self, window_builder: AnomalyWindowBuilder | None = None) -> None:
+        self._window_builder = window_builder or AnomalyWindowBuilder()
 
     def execute(self, df: pd.DataFrame) -> tuple[IsolationForest, StandardScaler, dict]:
         X_normal, X_all, y_all = self._build_dataset(df)
 
+        if len(X_normal) < MIN_NORMAL_SAMPLES:
+            raise ValueError(
+                "No se generó ninguna ventana de entrenamiento normal a partir de los "
+                "archivos subidos. Verifica que cada fermentación tenga al menos 2 "
+                "puntos de tiempo, y que no todas las filas estén marcadas is_anomaly=True."
+            )
+
         scaler = StandardScaler()
         X_normal_s = scaler.fit_transform(X_normal)
-        X_all_s = scaler.transform(X_all)
+        X_all_s = scaler.transform(X_all) if len(X_all) else X_normal_s
 
-        model = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
+        model = IsolationForest(n_estimators=100, contamination=0.05, random_state=42, warm_start=True)
         model.fit(X_normal_s)
 
-        metrics = self._evaluate(model, X_all_s, y_all)
+        metrics = self._evaluate(model, X_all_s, y_all) if len(X_all) else {
+            "precision": 0.0, "recall": 0.0, "f1": 0.0,
+        }
+        metrics["n_windows"] = len(X_all)
+        metrics["validated"] = len(X_all) >= 20
+        if not metrics["validated"]:
+            metrics["warning"] = (
+                f"Entrenado con solo {len(X_all)} ventana(s). Este modelo NO está "
+                f"evaluado de forma confiable -- agrega más fermentaciones antes de "
+                f"usarlo para notificaciones en producción."
+            )
+
         return model, scaler, metrics
 
     def _build_dataset(self, df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         normal_rows, all_rows, all_labels = [], [], []
 
         for _, group in df.groupby("fermentation_id"):
-            group = group.sort_values("time_hours").reset_index(drop=True)
-
-            for i in range(WINDOW_SIZE, len(group)):
-                window = group.iloc[i - WINDOW_SIZE: i]
-                request = self._build_request(group, window, i)
-
-                feat = self._extractor.execute(request)
-                is_anomaly = int(group.loc[i, "is_anomaly"])
-
+            for feat, label in self._window_builder.build(group):
                 all_rows.append(feat)
-                all_labels.append(is_anomaly)
-                if not is_anomaly:
+                all_labels.append(label)
+                if not label:
                     normal_rows.append(feat)
 
         return np.array(normal_rows), np.array(all_rows), np.array(all_labels)
-
-    @staticmethod
-    def _build_request(group: pd.DataFrame, window: pd.DataFrame, i: int) -> AnomalyRequestDTO:
-        current = SensorSnapshotDTO(
-            ph=group.loc[i, "ph"],
-            temperature_c=group.loc[i, "temperature_c"],
-            turbidity=group.loc[i, "turbidity_od"],
-            conductivity=group.loc[i, "conductivity_us_cm"],
-            alcohol_percent=group.loc[i, "alcohol_percent"],
-        )
-        history = [
-            SensorSnapshotDTO(
-                ph=row["ph"],
-                temperature_c=row["temperature_c"],
-                turbidity=row["turbidity_od"],
-                conductivity=row["conductivity_us_cm"],
-                alcohol_percent=row["alcohol_percent"],
-            )
-            for _, row in window.iterrows()
-        ]
-        return AnomalyRequestDTO(
-            current=current,
-            history_hours=window["time_hours"].tolist(),
-            history=history,
-        )
 
     @staticmethod
     def _evaluate(model: IsolationForest, X: np.ndarray, y_true: np.ndarray) -> dict:

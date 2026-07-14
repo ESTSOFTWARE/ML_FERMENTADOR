@@ -12,6 +12,9 @@ from src.application.use_cases.realtime.detect_anomaly import DetectAnomaly
 from src.application.use_cases.realtime.predict_efficiency import PredictEfficiency
 from src.application.use_cases.realtime.process_realtime_reading import ProcessRealtimeReading
 from src.application.use_cases.shared.readings_to_profile import ReadingsToProfile
+from src.application.use_cases.training.retrain_anomaly_with_real_report import (
+    RetrainAnomalyWithRealReport,
+)
 from src.application.use_cases.training.retrain_with_real_report import RetrainWithRealReport
 from src.application.use_cases.training.scheduled_nightly_retrain import ScheduledNightlyRetrain
 from src.infrastructure.adapters.http_fermentation_report_repository import (
@@ -105,8 +108,21 @@ def get_retrain_with_real_report() -> RetrainWithRealReport:
     )
 
 
+@lru_cache
+def get_retrain_anomaly_with_real_report() -> RetrainAnomalyWithRealReport:
+    return RetrainAnomalyWithRealReport(
+        model_repository=get_model_repository(),
+        reading_repository=get_sensor_reading_repository(),
+        readings_to_profile=ReadingsToProfile(),
+    )
+
+
 def get_nightly_retrain_use_case() -> ScheduledNightlyRetrain:
-    return ScheduledNightlyRetrain(get_retrain_with_real_report(), get_fermentation_report_repository())
+    return ScheduledNightlyRetrain(
+        retrain_efficiency=get_retrain_with_real_report(),
+        retrain_anomaly=get_retrain_anomaly_with_real_report(),
+        report_repository=get_fermentation_report_repository(),
+    )
 
 
 def get_training_controller() -> TrainingController:

@@ -7,7 +7,6 @@ from src.infrastructure.parsers.lab_file_reader import LabFileReader
 
 EFFICIENCY_MODEL_FILENAME = "xgboost_efficiency.pkl"
 EFFICIENCY_SCALER_FILENAME = "scaler_efficiency.pkl"
-MIN_FERMENTATIONS = 5
 
 
 class TrainEfficiencyFromFiles:
@@ -16,6 +15,14 @@ class TrainEfficiencyFromFiles:
     (uno por fermentación). Archivos "kinetic" calculan su target
     automáticamente (azúcar/etanol reales). Archivos "wide" requieren
     un efficiency_override explícito, porque no traen esa información.
+
+    No exige un mínimo de fermentaciones: se puede entrenar con 1 sola
+    mientras se acumulan más datos reales. TrainEfficiencyModel decide
+    internamente si hay suficientes muestras para hacer split de
+    validación/test (metrics["validated"] indica si el resultado está
+    evaluado o no). Con pocas fermentaciones, el modelo resultante debe
+    tratarse como provisional -- no lo uses para predicciones reales
+    hasta acumular más datos.
     """
 
     def __init__(self, model_repository: ModelRepository) -> None:
@@ -25,11 +32,8 @@ class TrainEfficiencyFromFiles:
         self._trainer = TrainEfficiencyModel()
 
     def execute(self, sources: list[tuple[Path, str, float | None]]) -> dict:
-        if len(sources) < MIN_FERMENTATIONS:
-            raise ValueError(
-                f"Se necesitan al menos {MIN_FERMENTATIONS} fermentaciones para entrenar "
-                f"desde cero (llegaron {len(sources)})."
-            )
+        if not sources:
+            raise ValueError("Debes subir al menos 1 archivo para entrenar.")
 
         profiles, targets = [], []
         for path, fermentation_id, efficiency_override in sources:

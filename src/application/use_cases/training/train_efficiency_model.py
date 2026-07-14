@@ -10,6 +10,11 @@ from src.application.use_cases.feature_engineering.extract_prediction_features i
 )
 from src.domain.entities.fermentation_profile import FermentationProfile
 
+# Con menos muestras que esto, no hay suficiente para hacer
+# train/val/test split de forma sensata -> se entrena con TODO
+# el dataset, sin evaluación (metrics vendrá vacío/None).
+MIN_SAMPLES_FOR_SPLIT = 15
+
 
 class TrainEfficiencyModel:
     """
@@ -21,6 +26,13 @@ class TrainEfficiencyModel:
     fit, evaluación). No genera datos, no hace feature engineering
     propio (delega a ExtractPredictionFeatures), no persiste nada
     (eso es responsabilidad del adapter que reciba el resultado).
+
+    Con pocas muestras (< MIN_SAMPLES_FOR_SPLIT) es imposible hacer un
+    split de 3 vías con sentido estadístico -- en ese caso se entrena
+    con el 100% de los datos, sin métricas de test ni early stopping.
+    El modelo resultante NO debe considerarse validado; es útil solo
+    para probar que el pipeline funciona end-to-end mientras se
+    acumulan más fermentaciones reales.
     """
 
     def __init__(self) -> None:
@@ -31,6 +43,13 @@ class TrainEfficiencyModel:
     ) -> tuple[XGBRegressor, StandardScaler, dict]:
         X, y = self._build_dataset(profiles, targets)
 
+        if len(X) < MIN_SAMPLES_FOR_SPLIT:
+            return self._fit_without_split(X, y)
+        return self._fit_with_split(X, y)
+
+    def _fit_with_split(
+        self, X: np.ndarray, y: np.ndarray
+    ) -> tuple[XGBRegressor, StandardScaler, dict]:
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
 
@@ -52,7 +71,41 @@ class TrainEfficiencyModel:
         model.fit(X_train_s, y_train, eval_set=[(X_val_s, y_val)], verbose=False)
 
         metrics = self._evaluate(model, X_test_s, y_test)
+        metrics["n_samples"] = len(X)
+        metrics["validated"] = True
         return model, scaler, metrics
+
+    def _fit_without_split(
+        self, X: np.ndarray, y: np.ndarray
+    ) -> tuple[XGBRegressor, StandardScaler, dict]:
+        scaler = StandardScaler()
+        X_s = scaler.fit_transform(X)
+
+        # Sin val/test set no hay early stopping posible; se usa un
+        # n_estimators conservador para reducir riesgo de overfit
+        # extremo con tan pocas muestras.
+        model = XGBRegressor(
+            n_estimators=50,
+            max_depth=3,
+            learning_rate=0.1,
+            random_state=42,
+            verbosity=0,
+        )
+        model.fit(X_s, y)
+
+        return (
+            model,
+            scaler,
+            {
+                "n_samples": len(X),
+                "validated": False,
+                "warning": (
+                    f"Entrenado con solo {len(X)} muestra(s), sin split de validación/test. "
+                    f"Este modelo NO está evaluado -- agrega más fermentaciones "
+                    f"(idealmente {MIN_SAMPLES_FOR_SPLIT}+) antes de confiar en sus predicciones."
+                ),
+            },
+        )
 
     def _build_dataset(
         self, profiles: list[FermentationProfile], targets: list[float | None] | None = None
