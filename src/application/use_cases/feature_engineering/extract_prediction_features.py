@@ -33,9 +33,18 @@ class ExtractPredictionFeatures:
         return features
 
     def _temporal_features(self, name: str, signal: np.ndarray, time: np.ndarray) -> dict[str, float]:
-        slope = float(np.polyfit(time, signal, 1)[0])
-        velocity = np.gradient(signal, time)
-        accel = float(np.gradient(velocity, time)[-1])
+        # Eliminar duplicados de tiempo para que np.gradient no falle
+        _, unique_idx = np.unique(time, return_index=True)
+        time   = time[unique_idx]
+        signal = signal[unique_idx]
+
+        slope = float(np.polyfit(time, signal, 1)[0]) if len(time) >= 2 else 0.0
+        if len(time) >= 2:
+            velocity = np.gradient(signal, time)
+            accel    = float(np.gradient(velocity, time)[-1]) if len(velocity) >= 2 else 0.0
+        else:
+            velocity = np.zeros(1)
+            accel    = 0.0
         autocorr = float(np.corrcoef(signal[:-1], signal[1:])[0, 1]) if len(signal) > 1 else 0.0
 
         mask_1h = time >= (time[-1] - 1.0)
