@@ -25,9 +25,15 @@ class Settings(BaseSettings):
     api_port: int
     api_prefix: str
 
-    # RabbitMQ
+    # RabbitMQ (cola ya ensamblada por el backend, formato RealtimeReadingDTO)
     rabbitmq_url: str
     rabbitmq_queue: str
+
+    # RabbitMQ dedicado a datos crudos de sensores (bridge MQTT), usado por
+    # el detector de anomalías en tiempo real. Servidor/credenciales
+    # propias -- NUNCA hardcodeadas, siempre desde variable de entorno.
+    mqtt_sensor_rabbitmq_url: str
+    mqtt_sensor_queue: str
 
     # Backend
     backend_base_url: str

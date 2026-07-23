@@ -36,6 +36,11 @@ ENV DATA_DIR=data/generated \
     BACKEND_SENSORS_ENDPOINT=/api/sensors/history \
     BACKEND_NOTIFICATIONS_ENDPOINT=/api/notifications/push \
     BACKEND_API_TIMEOUT_SECONDS=10.0 \
+    RABBITMQ_URL=amqp://guest:guest@localhost/ \
+    RABBITMQ_QUEUE=ml_queue \
+    MQTT_SENSOR_RABBITMQ_URL=amqp://guest:guest@localhost/ \
+    MQTT_SENSOR_QUEUE=mqtt.sensor.data.queue \
+    BACKEND_BASE_URL=http://localhost:8000 \
     DEBUG=false
 
 RUN python scripts/train_initial_models.py

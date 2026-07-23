@@ -33,7 +33,13 @@ from src.infrastructure.controllers.training_controller import TrainingControlle
 from src.application.use_cases.inference.get_inference_history import GetInferenceHistory
 from src.infrastructure.adapters.postgres_inference_repository import PostgresInferenceRepository
 from src.infrastructure.controllers.inference_controller import InferenceController
-
+from src.application.use_cases.realtime.process_mqtt_sensor_reading import (
+    ProcessMqttSensorReading,
+)
+from src.infrastructure.adapters.in_memory_circuit_sensor_state_repository import (
+    InMemoryCircuitSensorStateRepository,
+)
+from src.infrastructure.adapters.mqtt_sensor_consumer import MqttSensorConsumer
 
 @lru_cache
 def get_model_repository() -> JoblibModelRepository:
@@ -149,3 +155,24 @@ def get_train_efficiency_from_files() -> TrainEfficiencyFromFiles:
 
 def get_train_anomaly_from_files() -> TrainAnomalyFromFiles:
     return TrainAnomalyFromFiles(model_repository=get_model_repository())
+
+@lru_cache
+def get_circuit_sensor_state_repository() -> InMemoryCircuitSensorStateRepository:
+    return InMemoryCircuitSensorStateRepository()
+
+
+@lru_cache
+def get_process_mqtt_sensor_reading() -> ProcessMqttSensorReading:
+    return ProcessMqttSensorReading(
+        state_repository=get_circuit_sensor_state_repository(),
+        detect_anomaly=DetectAnomaly(
+            model_repository=get_model_repository(),
+            inference_repository=get_inference_repository(),
+            feature_extractor=ExtractAnomalyFeatures(),
+        ),
+        notification_publisher=get_notification_publisher(),
+    )
+
+
+def get_mqtt_sensor_consumer() -> MqttSensorConsumer:
+    return MqttSensorConsumer(get_process_mqtt_sensor_reading())

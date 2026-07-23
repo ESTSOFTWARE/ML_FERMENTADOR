@@ -14,13 +14,21 @@ from src.infrastructure.routes import (
     realtime_routes,
     training_routes,
 )
-
+from src.infrastructure.adapters.mqtt_sensor_consumer import MqttSensorConsumer
+from src.infrastructure.dependencies import (
+    get_nightly_retrain_use_case,
+    get_process_mqtt_sensor_reading,
+    get_realtime_use_case,
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     consumer = RabbitMQConsumer(get_realtime_use_case())
     await consumer.start()
 
+    mqtt_sensor_consumer = MqttSensorConsumer(get_process_mqtt_sensor_reading())
+    await mqtt_sensor_consumer.start()
+    
     scheduler = AsyncIOScheduler()
     nightly_retrain = get_nightly_retrain_use_case()
     scheduler.add_job(
@@ -35,6 +43,7 @@ async def lifespan(app: FastAPI):
     yield
 
     await consumer.stop()
+    await mqtt_sensor_consumer.stop()
     scheduler.shutdown()
 
 

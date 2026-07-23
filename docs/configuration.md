@@ -23,8 +23,10 @@ Definidas en `src/infrastructure/config/settings.py` (`pydantic-settings`), carg
 | `API_HOST` | `str` | Host de bind de Uvicorn | `0.0.0.0` |
 | `API_PORT` | `int` | Puerto de la API | `8000` |
 | `API_PREFIX` | `str` | Prefijo común de todas las rutas (excepto `/health`) | `/api/v1` |
-| `RABBITMQ_URL` | `str` | URL de conexión AMQP (RabbitMQ/CloudAMQP) — **secreto**, no versionar | `amqp://user:pass@host/vhost` |
-| `RABBITMQ_QUEUE` | `str` | Cola de la que se consumen lecturas de sensores en tiempo real | `sensor.readings` |
+| `RABBITMQ_URL` | `str` | URL de conexión AMQP (RabbitMQ/CloudAMQP) para la cola de lecturas ya ensambladas por el backend — **secreto**, no versionar | `amqp://user:pass@host/vhost` |
+| `RABBITMQ_QUEUE` | `str` | Cola de la que se consumen lecturas ya armadas como `RealtimeReadingDTO` (predicción + detección combinadas) | `sensor.readings` |
+| `MQTT_SENSOR_RABBITMQ_URL` | `str` | URL de conexión AMQP dedicada a la cola de datos crudos de sensores (bridge MQTT), usada exclusivamente por el detector de anomalías en tiempo real. Puede ser el mismo broker que `RABBITMQ_URL` o uno distinto — **secreto**, no versionar | `amqps://user:pass@host/vhost` |
+| `MQTT_SENSOR_QUEUE` | `str` | Cola de la que se consumen lecturas crudas de UN sensor por mensaje (`sensor_type` + `value`) | `mqtt.sensor.data.queue` |
 | `BACKEND_BASE_URL` | `str` | URL base del backend principal Nich-Ká | `http://host.docker.internal:8000` |
 | `BACKEND_REPORTS_ENDPOINT` | `str` | Ruta relativa para consultar reportes de fermentación | `/api/fermentation-reports` |
 | `BACKEND_SENSORS_ENDPOINT` | `str` | Ruta relativa para consultar el historial de lecturas de sensores | `/api/sensor-readings` |
@@ -54,6 +56,11 @@ API_PREFIX=/api/v1
 
 RABBITMQ_URL=amqp://guest:guest@localhost/
 RABBITMQ_QUEUE=sensor.readings
+
+# Dedicado a la detección de anomalías en tiempo real (datos crudos de
+# sensores, un mensaje por sensor, publicados por el bridge MQTT).
+MQTT_SENSOR_RABBITMQ_URL=amqp://guest:guest@localhost/
+MQTT_SENSOR_QUEUE=mqtt.sensor.data.queue
 
 BACKEND_BASE_URL=http://localhost:8000
 BACKEND_REPORTS_ENDPOINT=/api/fermentation-reports

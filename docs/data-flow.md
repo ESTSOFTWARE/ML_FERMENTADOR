@@ -57,13 +57,13 @@ sequenceDiagram
 
 Este flujo corre en el `Dockerfile` durante el *build* de la imagen (`RUN python scripts/train_initial_models.py`), garantizando que el servicio arranque con modelos base disponibles.
 
-## 3. Inferencia en tiempo real
+## 3. Inferencia en tiempo real — flujo combinado (predicción + anomalía)
 
-Es el flujo principal en producción: por cada lectura de sensores de una sesión activa, se ejecuta **siempre** la detección de anomalías, y la **predicción de eficiencia solo si ya se alcanzó el 50 % del tiempo planeado** de la fermentación.
+Flujo activado por el backend cuando ya tiene una lectura ensamblada: se ejecuta **siempre** la detección de anomalías, y la **predicción de eficiencia solo si ya se alcanzó el 50 % del tiempo planeado** de la fermentación.
 
 ```mermaid
 sequenceDiagram
-    participant Src as Backend / RabbitMQ
+    participant Src as Backend / RabbitMQ (RABBITMQ_QUEUE)
     participant Ctrl as RealtimeController / RabbitMQConsumer
     participant P as ProcessRealtimeReading
     participant DA as DetectAnomaly
@@ -93,7 +93,65 @@ sequenceDiagram
 Dos vías de entrada equivalentes disparan este mismo flujo:
 
 1. **HTTP**: `POST /api/v1/realtime/reading`, llamado por el backend.
-2. **RabbitMQ**: `RabbitMQConsumer` escuchando la cola `RABBITMQ_QUEUE`, para el camino asíncrono desde los sensores (ESP32).
+2. **RabbitMQ**: `RabbitMQConsumer` escuchando la cola `RABBITMQ_QUEUE`, con el `RealtimeReadingDTO` ya armado por el backend.
+
+Este flujo sigue siendo la única vía para la **predicción de eficiencia** (necesita `elapsed_hours`/`planned_duration_hours`, que solo conoce el backend). Para anomalías, ver la sección siguiente.
+
+## 3.1. Detección de anomalías dedicada — datos crudos de sensores (`mqtt.sensor.data.queue`)
+
+Camino **independiente** del anterior, pensado para que la detección de anomalías reaccione a cada lectura real de sensor sin esperar a que el backend arme nada — es el flujo verdaderamente en tiempo real del Isolation Forest.
+
+A diferencia de `RABBITMQ_QUEUE`, esta cola recibe **un mensaje por sensor individual** (`circuit_id`, `sensor_type`, `value`, `active`, `session_id`, `timestamp`), publicado directamente por el bridge MQTT → RabbitMQ. Por eso hace falta reconstruir el snapshot completo (los 5 sensores) en memoria antes de poder correr el modelo.
+
+```mermaid
+sequenceDiagram
+    participant ESP32 as Sensores / ESP32 (bridge MQTT)
+    participant Q as RabbitMQ (mqtt.sensor.data.queue)
+    participant C as MqttSensorConsumer
+    participant P as ProcessMqttSensorReading
+    participant State as CircuitSensorStateRepository (memoria)
+    participant DA as DetectAnomaly
+    participant DB as PostgreSQL
+    participant Pub as NotificationPublisher
+    participant BE as Backend principal
+
+    ESP32->>Q: {circuit_id, sensor_type, value, active, session_id, timestamp}
+    Q->>C: mensaje (un sensor)
+    C->>C: descarta si active=false\no si sensor_type no es de interés (density, rpm)
+    C->>P: execute(circuit_id, session_id, timestamp, field, value)
+    P->>State: update_latest(circuit_id, field, value)
+    P->>State: get_latest_snapshot(circuit_id, campos requeridos)
+
+    alt aún falta el primer valor de algún sensor
+        State-->>P: None
+        Note over P: se omite este ciclo, sin correr el modelo
+    else snapshot completo
+        State-->>P: SensorSnapshotDTO
+        P->>State: add_snapshot(circuit_id, timestamp, snapshot)
+        P->>State: get_recent_snapshots(circuit_id, 2h)
+
+        alt menos de 2 snapshots en la ventana
+            Note over P: historial insuficiente, se omite este ciclo
+        else historial suficiente
+            P->>DA: execute(current + historial 2h)
+            DA->>DB: guarda AnomalyInference
+            DA-->>P: is_anomaly, score
+            alt session_id no es None
+                P->>Pub: publish_anomaly_result()
+                Pub->>BE: POST /notifications (type=anomaly)
+            else session_id es None
+                Note over P: se guarda la inferencia, pero no se notifica\n(no hay sesión activa a la que asociarla)
+            end
+        end
+    end
+```
+
+Puntos clave de este flujo:
+
+- **Conexión propia**: usa un servidor/credenciales de RabbitMQ independientes del resto (`MQTT_SENSOR_RABBITMQ_URL`), configurables por variable de entorno.
+- **Estado en memoria por circuito**: `InMemoryCircuitSensorStateRepository` mantiene (a) el último valor conocido de cada sensor y (b) una ventana deslizante de snapshots ya armados (últimas 2h, anclada al timestamp del snapshot más reciente, no al reloj de pared). Es estado de un solo proceso — si el servicio se reinicia o se escala a varias réplicas, la ventana se reconstruye desde cero / queda fragmentada entre réplicas (ver nota de escalabilidad en `docs/architecture.md`).
+- **Solo anomalías**: este flujo no hace predicción de eficiencia — para eso sigue siendo necesario el flujo de la sección 3.
+- **Coexistencia con el flujo viejo**: mientras el backend siga disparando también el flujo de la sección 3 (que igualmente corre `DetectAnomaly`), pueden generarse inferencias de anomalía duplicadas para un mismo circuito/sesión. Ver nota operativa en `docs/architecture.md`.
 
 ## 4. Reentrenamiento incremental
 
