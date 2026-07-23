@@ -47,7 +47,7 @@ class MqttSensorConsumer:
         self._connection = await aio_pika.connect_robust(settings.mqtt_sensor_rabbitmq_url)
         channel = await self._connection.channel()
         await channel.set_qos(prefetch_count=20)
-        queue = await channel.declare_queue(settings.mqtt_sensor_queue, durable=True)
+        queue = await channel.get_queue(settings.mqtt_sensor_queue, ensure=True)
         await queue.consume(self._handle_message)
         logger.info("MqttSensorConsumer escuchando en queue: %s", settings.mqtt_sensor_queue)
 
