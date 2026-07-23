@@ -5,6 +5,7 @@ import json
 import logging
 
 import aio_pika
+from pydantic import ValidationError
 
 from src.application.use_cases.realtime.process_mqtt_sensor_reading import (
     ProcessMqttSensorReading,
@@ -25,6 +26,26 @@ _SENSOR_TYPE_TO_FIELD = {
     "conductivity": "conductivity",
     "alcohol": "alcohol_percent",
 }
+
+
+def _parse_routing_key(routing_key: str) -> tuple[int | None, str | None]:
+    """
+    Los ESP32 publican en el topic MQTT 'sensors/{circuit_id}/{sensor_type}',
+    que RabbitMQ entrega como routing key 'sensors.{circuit_id}.{sensor_type}'
+    (el plugin MQTT convierte '/' en '.'). El topic es la fuente CONFIABLE de
+    circuit_id/sensor_type: ambos firmwares lo incluyen ahí, aunque el motor
+    (MOTOR.ino) no los ponga en el payload JSON.
+
+    Devuelve (circuit_id, sensor_type) o (None, None) si el routing key no
+    tiene el formato esperado.
+    """
+    parts = routing_key.split(".")
+    if len(parts) == 3 and parts[0] == "sensors":
+        try:
+            return int(parts[1]), parts[2]
+        except ValueError:
+            return None, None
+    return None, None
 
 
 class MqttSensorConsumer:
@@ -60,7 +81,30 @@ class MqttSensorConsumer:
         async with message.process(requeue=False):
             try:
                 payload = json.loads(message.body)
-                reading = MqttSensorMessageDTO(**payload)
+
+                # circuit_id/sensor_type van SIEMPRE en el topic MQTT
+                # ('sensors/{circuit_id}/{sensor_type}'). Se toman de ahí
+                # cuando el payload no los trae (ej. mensajes del motor,
+                # MOTOR.ino, que solo publican 'value').
+                circuit_id, sensor_type = _parse_routing_key(message.routing_key)
+                if circuit_id is not None:
+                    payload.setdefault("circuit_id", circuit_id)
+                if sensor_type is not None:
+                    payload.setdefault("sensor_type", sensor_type)
+
+                try:
+                    reading = MqttSensorMessageDTO(**payload)
+                except ValidationError as exc:
+                    # Ni el payload ni el routing key ('%s') traen los campos
+                    # obligatorios: no es una lectura de sensor enrutable. Se
+                    # descarta sin traceback (no es un error del consumer).
+                    logger.warning(
+                        "Mensaje descartado (routing_key=%s, falta %s): %s",
+                        message.routing_key,
+                        "; ".join(e["loc"][0] for e in exc.errors()),
+                        message.body,
+                    )
+                    return
 
                 if not reading.active:
                     logger.debug(
